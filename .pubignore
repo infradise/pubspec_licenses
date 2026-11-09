@@ -1,0 +1,27 @@
+# Ignore test suite and linter config in published pub.dev archive
+test/
+analysis_options.yaml
+
+# Ignore Dart tool, doc, build, and lockfile artifacts (.pubignore overrides .gitignore)
+.dart_tool/
+build/
+doc/
+coverage/
+pubspec.lock
+/lib/oss_licenses.dart
+
+# Ignore Git, CI, and ignore configuration files themselves
+.git/
+.github/
+.gitignore
+.pubignore
+
+# Ignore IDEs & OS artifacts
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
