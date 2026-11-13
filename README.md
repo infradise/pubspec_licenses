@@ -165,7 +165,7 @@ dart run pubspec_licenses:generate -o assets/oss_licenses.json
 
 This package is inspired by and designed for drop-in compatibility with [`dart_pubspec_licenses`](https://github.com/espresso3389/flutter_oss_licenses/tree/master/packages/dart_pubspec_licenses), part of the [`flutter_oss_licenses`](https://github.com/espresso3389/flutter_oss_licenses) project created by [Takashi Kawasaki (espresso3389)](https://github.com/espresso3389).
 
-`pubspec_licenses` is an independent, clean-room zero-dependency implementation engineered to preserve full API compatibility with `dart_pubspec_licenses` v3.2.0 while removing the external `pana`, `analyzer`, `yaml`, `path`, and `args` dependency chain.
+`pubspec_licenses` is an independent, zero-dependency implementation engineered to preserve full API compatibility with `dart_pubspec_licenses` v3.2.0 while removing the external `pana`, `analyzer`, `yaml`, `path`, and `args` dependency chain.
 
 ---
 

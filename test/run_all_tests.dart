@@ -749,6 +749,22 @@ Future<void> _runApiParityAndModelTests() async {
   });
 }
 
+String? _resolveHostedPubCachePath() {
+  final env = Platform.environment;
+  final pubCache = env['PUB_CACHE'];
+  final baseDir = (pubCache != null && pubCache.isNotEmpty)
+      ? pubCache
+      : Platform.isWindows
+          ? (env['LOCALAPPDATA'] != null
+              ? join(env['LOCALAPPDATA']!, 'Pub', 'Cache')
+              : null)
+          : (env['HOME'] != null ? join(env['HOME']!, '.pub-cache') : null);
+  if (baseDir == null) {
+    return null;
+  }
+  return join(baseDir, 'hosted', 'pub.dev');
+}
+
 Future<void> _runEndToEndTests() async {
   await _test(
       '5.1 listDependencies resolves hosted, path, git, and sdk packages with full graph',
@@ -1179,14 +1195,27 @@ packages: {}
     final selfPkg = await Package.fromDirectory(projectRoot: Directory.current);
     _expectTrue(selfPkg != null, 'Self package should load');
     _expectEqual(selfPkg!.name, 'pubspec_licenses');
-    _expectEqual(selfPkg.version, '1.0.0');
+    final pubspecContent = await File(
+      join(Directory.current.path, 'pubspec.yaml'),
+    ).readAsString();
+    final expectedVersion = RegExp(r'^version:\s*([^\s#]+)', multiLine: true)
+        .firstMatch(pubspecContent)
+        ?.group(1)
+        ?.replaceAll('"', '')
+        .replaceAll("'", '');
+    _expectTrue(
+      expectedVersion != null && expectedVersion.isNotEmpty,
+      'pubspec.yaml should declare a version',
+    );
+    _expectEqual(selfPkg.version, expectedVersion);
     _expectListEqual(selfPkg.spdxIdentifiers, <String>['Apache-2.0']);
 
-    // 2. Verify real dart_pubspec_licenses-3.2.0 in ~/.pub-cache if present
-    final cachedDir = Directory(
-      '/Users/kth/.pub-cache/hosted/pub.dev/dart_pubspec_licenses-3.2.0',
-    );
-    if (cachedDir.existsSync()) {
+    // 2. Verify real dart_pubspec_licenses-3.2.0 in local pub-cache if present
+    final hostedCachePath = _resolveHostedPubCachePath();
+    final cachedDir = hostedCachePath != null
+        ? Directory(join(hostedCachePath, 'dart_pubspec_licenses-3.2.0'))
+        : null;
+    if (cachedDir != null && cachedDir.existsSync()) {
       final cachedPkg = await Package.fromDirectory(projectRoot: cachedDir);
       _expectTrue(cachedPkg != null, 'dart_pubspec_licenses-3.2.0 should load');
       _expectEqual(cachedPkg!.name, 'dart_pubspec_licenses');
@@ -1515,10 +1544,13 @@ Future<void> _runRealPubCacheCorpusTests() async {
   await _test(
       '6.1 Stress-tests MiniYamlParser, SpdxDetector, and Package.fromDirectory across ~/.pub-cache/hosted/pub.dev',
       () async {
-    final hostedDir = Directory('/Users/kth/.pub-cache/hosted/pub.dev');
-    if (!hostedDir.existsSync()) {
+    final hostedCachePath = _resolveHostedPubCachePath();
+    final hostedDir =
+        hostedCachePath != null ? Directory(hostedCachePath) : null;
+    if (hostedDir == null || !hostedDir.existsSync()) {
       stdout.writeln(
-          '    [INFO] /Users/kth/.pub-cache/hosted/pub.dev not present; skipping corpus scan.');
+        '    [INFO] Hosted pub-cache directory not present; skipping corpus scan.',
+      );
       return;
     }
 
