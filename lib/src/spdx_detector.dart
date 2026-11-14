@@ -2,6 +2,7 @@
 ///
 /// Replaces `package:pana` for detecting SPDX license identifiers from raw
 /// `LICENSE` file contents with zero external dependencies.
+library;
 
 final RegExp _spdxTagRegex = RegExp(
   r'SPDX-License-Identifier:\s*([^\r\n]+)',
