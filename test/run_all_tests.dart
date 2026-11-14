@@ -85,19 +85,24 @@ Future<void> main() async {
 }
 
 Future<void> _runPathUtilsTests() async {
+  final sep = Platform.pathSeparator;
+
   await _test('1.1 join combines relative and nested segments', () async {
-    _expectEqual(join('a', 'b', 'c'), 'a/b/c');
+    _expectEqual(join('a', 'b', 'c'), 'a${sep}b${sep}c');
     _expectEqual(join('/usr/', '/local/', 'bin'), '/local/bin');
     _expectEqual(join('/usr/', 'local/', 'bin'), '/usr/local/bin');
-    _expectEqual(join('a', '', 'b'), 'a/b');
-    _expectEqual(joinAll(<String>['p1', 'p2', 'p3', 'p4']), 'p1/p2/p3/p4');
+    _expectEqual(join('a', '', 'b'), 'a${sep}b');
+    _expectEqual(
+      joinAll(<String>['p1', 'p2', 'p3', 'p4']),
+      'p1${sep}p2${sep}p3${sep}p4',
+    );
   });
 
-  await _test('1.2 normalize resolves . and .. on POSIX paths', () async {
-    _expectEqual(normalize('a/b/../c/./d//e'), 'a/c/d/e');
-    _expectEqual(normalize('/a/b/../../c'), '/c');
-    _expectEqual(normalize('/../../a'), '/a');
-    _expectEqual(normalize('../a/b/../c'), '../a/c');
+  await _test('1.2 normalize resolves . and .. segments', () async {
+    _expectEqual(normalize('a/b/../c/./d//e'), 'a${sep}c${sep}d${sep}e');
+    _expectEqual(normalize('/a/b/../../c'), '${sep}c');
+    _expectEqual(normalize('/../../a'), '${sep}a');
+    _expectEqual(normalize('../a/b/../c'), '..${sep}a${sep}c');
     _expectEqual(normalize(''), '.');
     _expectEqual(normalize('.'), '.');
   });
@@ -122,8 +127,8 @@ Future<void> _runPathUtilsTests() async {
     _expectEqual(basename('/path/to/pubspec.yaml'), 'pubspec.yaml');
     _expectEqual(dirname('pubspec.yaml'), '.');
     _expectEqual(basename('/a/b/c/'), 'c');
-    _expectEqual(dirname('/a'), '/');
-    _expectEqual(dirname('/'), '/');
+    _expectEqual(dirname('/a'), sep);
+    _expectEqual(dirname('/'), sep);
     _expectEqual(dirname(r'C:\src\app\pubspec.lock'), r'C:\src\app');
     _expectEqual(basename(r'C:\src\app\pubspec.lock'), 'pubspec.lock');
   });
@@ -650,8 +655,10 @@ Future<void> _runApiParityAndModelTests() async {
       devDependencies: <Package>[],
     );
 
-    _expectEqual(pkg.pubspecYamlPath, '/tmp/demo_pkg/pubspec.yaml');
-    _expectEqual(pkg.getFilePath('LICENSE.md'), '/tmp/demo_pkg/LICENSE.md');
+    final sep = Platform.pathSeparator;
+    _expectEqual(pkg.pubspecYamlPath, '/tmp/demo_pkg${sep}pubspec.yaml');
+    _expectEqual(
+        pkg.getFilePath('LICENSE.md'), '/tmp/demo_pkg${sep}LICENSE.md');
 
     final json = pkg.toJson();
     _expectEqual(json['name'], 'demo_pkg');
