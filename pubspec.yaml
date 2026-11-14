@@ -1,6 +1,6 @@
 name: pubspec_licenses
 description: Zero-dependency Dart library and CLI to extract OSS licenses and SPDX identifiers from pubspec.lock. Drop-in replacement for dart_pubspec_licenses.
-version: 1.0.0
+version: 1.0.1
 homepage: https://github.com/infradise/pubspec_licenses
 repository: https://github.com/infradise/pubspec_licenses
 issue_tracker: https://github.com/infradise/pubspec_licenses/issues

@@ -1,3 +1,10 @@
+## 1.0.1
+
+- Added explicit `library;` directive in `lib/src/spdx_detector.dart` to satisfy `dangling_library_doc_comments` under `lints_core` static analysis.
+- Refined package overview documentation and updated version examples in `README.md`.
+- Updated the zero-dependency test suite to resolve local `pub-cache` paths and package version dynamically, and normalized path separator assertions on Windows.
+- Added multi-OS (`Linux`, `macOS`, `Windows`) and `pana` preflight verification workflow in GitHub Actions.
+
 ## 1.0.0
 
 - Initial release of `pubspec_licenses`.

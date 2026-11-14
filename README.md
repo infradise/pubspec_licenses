@@ -30,9 +30,9 @@ dart_pubspec_licenses 3.2.0
 ├── path 1.9.0
 └── yaml 3.1.3
 
-# pubspec_licenses v1.0.0
+# pubspec_licenses v1.0.1
 Dart SDK 3.x
-pubspec_licenses 1.0.0
+pubspec_licenses 1.0.1
 (0 dependencies)
 ```
 
@@ -54,7 +54,7 @@ pubspec_licenses 1.0.0
 ```yaml
 dev_dependencies:
   # Replace dart_pubspec_licenses with pubspec_licenses:
-  pubspec_licenses: ^1.0.0
+  pubspec_licenses: ^1.0.1
 ```
 
 *(Or place under `dependencies:` if your application imports `pubspec_licenses` at runtime.)*
