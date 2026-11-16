@@ -217,7 +217,7 @@ jobs:
 
             DRY_OUT="${RUNNER_TEMP}/publish_dry_run.txt"
             dart pub publish --dry-run | tee "${DRY_OUT}"
-            if grep -E '^├── (\.github|test)\b' "${DRY_OUT}"; then
+            if grep -E '^[├└]── (\.github|test|docs|analysis_options\.yaml)\b' "${DRY_OUT}"; then
               echo "ERROR: .github or test directory leaked into published archive!"
               exit 1
             fi
@@ -226,7 +226,7 @@ jobs:
             DRY_OUT="${RUNNER_TEMP}/publish_dry_run.txt"
             dart pub publish --dry-run > "${DRY_OUT}" 2>&1 || true
             cat "${DRY_OUT}"
-            if grep -E '^├── (\.github|test)\b' "${DRY_OUT}"; then
+            if grep -E '^[├└]── (\.github|test|docs|analysis_options\.yaml)\b' "${DRY_OUT}"; then
               echo "ERROR: .github or test directory leaked into published archive!"
               exit 1
             fi

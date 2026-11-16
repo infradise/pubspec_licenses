@@ -358,7 +358,7 @@ class _YamlParseState {
       final quoteChar = trimmed[0];
       final buffer = StringBuffer(trimmed);
       while (!isAtEnd && !_isClosedQuote(buffer.toString(), quoteChar)) {
-        final nextRaw = lines[index].trim();
+        final nextRaw = _trimOpenQuoteContinuation(lines[index], quoteChar);
         index++;
         if (buffer.isNotEmpty) buffer.write(' ');
         buffer.write(nextRaw);
@@ -375,8 +375,7 @@ class _YamlParseState {
       final nextIndent = _countIndent(nextStripped);
       if (nextIndent <= parentIndent) break;
       final nextContent = nextStripped.substring(nextIndent).trim();
-      if (_isSequenceItem(nextContent) ||
-          _findMappingColon(nextContent) != -1) {
+      if (_isSequenceItem(nextContent)) {
         break;
       }
       parts.add(nextContent);
@@ -521,6 +520,48 @@ bool _isClosedQuote(String text, String quote) {
       i++;
     }
     return false;
+  }
+}
+
+/// Trims a continuation line inside an already-open YAML quoted scalar and
+/// strips any trailing `# comment` that appears after the closing quote.
+String _trimOpenQuoteContinuation(String rawLine, String quote) {
+  final trimmed = rawLine.trim();
+  if (trimmed.isEmpty) return '';
+  if (quote == "'") {
+    var i = 0;
+    while (i < trimmed.length) {
+      if (trimmed[i] == "'") {
+        if (i + 1 < trimmed.length && trimmed[i + 1] == "'") {
+          i += 2;
+          continue;
+        }
+        final rest = trimmed.substring(i + 1).trimLeft();
+        if (rest.isEmpty || rest.startsWith('#')) {
+          return trimmed.substring(0, i + 1);
+        }
+        return trimmed;
+      }
+      i++;
+    }
+    return trimmed;
+  } else {
+    var i = 0;
+    while (i < trimmed.length) {
+      if (trimmed[i] == r'\') {
+        i += 2;
+        continue;
+      }
+      if (trimmed[i] == '"') {
+        final rest = trimmed.substring(i + 1).trimLeft();
+        if (rest.isEmpty || rest.startsWith('#')) {
+          return trimmed.substring(0, i + 1);
+        }
+        return trimmed;
+      }
+      i++;
+    }
+    return trimmed;
   }
 }
 

@@ -1,3 +1,11 @@
+## 1.1.0
+
+- **Safe Dart Codegen String Escaping (`renderDartLicensesFile`)**: Escaped backslashes (`\` -> `\\`), carriage returns, NUL bytes, `$` interpolation tokens (`\$foo` no longer unescapes into live `$foo` interpolation), and trailing quotes before closing `'''` / `"""` delimiters, plus added identifier collision deduplication for split SDK components.
+- **Transitive Dev-Dependency Graph Pruning (`--no-dev-dependencies`)**: Traversed the runtime dependency graph via BFS from root runtime `dependencies` (`direct main` / non-dev `direct overridden`) so `generateDevDependencies: false` excludes transitive dev-only packages (such as `test_api`, `fake_async`, `lints`, and `build_daemon`) in addition to `direct dev` entries.
+- **Root Package `--ignore` Parity in Dart Codegen**: Stripped root package `license`, `description`, `homepage`, `repository`, `authors`, and `spdxIdentifiers` when the root package name is passed to `--ignore` (`-i`), preventing proprietary application terms from being emitted into `oss_licenses.dart` while keeping `thisPackage` API-compatible.
+- **Dart 3.5+ Pub Workspace Sub-Package CLI Resolution**: Updated `generate` CLI to traverse upward via `findPubspecLockFromDirectory` and resolve lockfile relative `path` dependencies against the workspace `pubspec.lock` root directory.
+- **YAML, License Filename & SPDX `WITH` Hardening**: Fixed `MiniYamlParser` multiline quoted scalar trailing `# comment` handling and indented plain-scalar `: ` continuations, added `LICENCE` / `UNLICENSE` and case-insensitive license filename discovery, and preserved SPDX `WITH` exception clauses (such as `Apache-2.0 WITH LLVM-exception`).
+
 ## 1.0.1
 
 - Added explicit `library;` directive in `lib/src/spdx_detector.dart` to satisfy `dangling_library_doc_comments` under `lints_core` static analysis.

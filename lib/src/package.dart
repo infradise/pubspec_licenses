@@ -400,12 +400,22 @@ class Package {
       ('LICENSE', false),
       ('LICENSE.md', true),
       ('LICENSE.txt', false),
+      ('LICENCE', false),
+      ('LICENCE.md', true),
+      ('LICENCE.txt', false),
       ('COPYING', false),
       ('COPYING.md', true),
       ('COPYING.txt', false),
+      ('UNLICENSE', false),
+      ('UNLICENSE.md', true),
+      ('UNLICENSE.txt', false),
       ('license', false),
       ('license.md', true),
       ('license.txt', false),
+      ('licence', false),
+      ('licence.md', true),
+      ('licence.txt', false),
+      ('unlicense', false),
     ];
 
     for (final (fileName, markdown) in candidates) {
@@ -417,6 +427,33 @@ class Package {
         } catch (_) {
           // Continue to next candidate
         }
+      }
+    }
+
+    // Case-insensitive directory scan fallback on case-sensitive filesystems
+    if (await projectRoot.exists()) {
+      try {
+        final fallbackPattern = RegExp(
+          r'^(licen[cs]e|copying|unlicense)(\.(md|markdown|txt))?$',
+          caseSensitive: false,
+        );
+        final matchedFiles = projectRoot
+            .listSync()
+            .whereType<File>()
+            .where((f) => fallbackPattern.hasMatch(path.basename(f.path)))
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
+        for (final file in matchedFiles) {
+          try {
+            final lower = file.path.toLowerCase();
+            final isMd = lower.endsWith('.md') || lower.endsWith('.markdown');
+            return _LoadedLicense(await file.readAsString(), isMd);
+          } catch (_) {
+            // Continue
+          }
+        }
+      } catch (_) {
+        // Ignore directory listing errors
       }
     }
 

@@ -31,20 +31,66 @@ Future<String> findProjectRoot({Directory? from}) async {
 
 /// Renders the `oss_licenses.dart` Dart source code for [deps], matching
 /// `dart_pubspec_licenses` v3.2.0 output format 1:1.
-String renderDartLicensesFile(ProjectStructure deps) {
+String renderDartLicensesFile(
+  ProjectStructure deps, {
+  List<String> ignore = const <String>[],
+}) {
   final sb = StringBuffer();
+  final ignoredSet = ignore.toSet();
 
   String toQuotedString(String s) {
-    s = s.replaceAll(r'$', r'\$');
+    var escaped = s
+        .replaceAll(r'\', r'\\')
+        .replaceAll(r'$', r'\$')
+        .replaceAll('\r', r'\r')
+        .replaceAll('\x00', r'\x00');
     final quoteCount = "'".allMatches(s).length;
     final doubleQuoteCount = '"'.allMatches(s).length;
     final quote = quoteCount > doubleQuoteCount ? '"' : "'";
-    if (!s.contains('\n')) {
-      return quote + s.replaceAll(quote, '\\$quote') + quote;
+    if (!escaped.contains('\n')) {
+      return quote + escaped.replaceAll(quote, '\\$quote') + quote;
     }
     final q3 = quote * 3;
-    return q3 + s.replaceAll(q3, '\\$quote' * 3) + q3;
+    escaped = escaped.replaceAll(q3, '\\$quote' * 3);
+    if (escaped.endsWith(quote)) {
+      escaped = '${escaped.substring(0, escaped.length - 1)}\\$quote';
+    }
+    return '$q3$escaped$q3';
   }
+
+  final effectiveRootPackage = ignoredSet.contains(deps.package.name)
+      ? Package(
+          name: deps.package.name,
+          description: '',
+          authors: const <String>[],
+          isMarkdown: false,
+          isSdk: deps.package.isSdk,
+          dependencies: deps.package.dependencies,
+          devDependencies: deps.package.devDependencies,
+        )
+      : deps.package;
+
+  final allRenderedPackages = <Package>[
+    ...deps.allDependencies,
+    effectiveRootPackage,
+  ];
+
+  final usedIdentifiers = <String>{};
+  final packageIdentMap = <String, String>{};
+  for (final pkg in allRenderedPackages) {
+    if (packageIdentMap.containsKey(pkg.name)) continue;
+    final base = '_${_sanitizeIdentifier(pkg.name)}';
+    var candidate = base;
+    var suffix = 2;
+    while (!usedIdentifiers.add(candidate)) {
+      candidate = '${base}_$suffix';
+      suffix++;
+    }
+    packageIdentMap[pkg.name] = candidate;
+  }
+
+  String identOf(String pkgName) =>
+      packageIdentMap[pkgName] ?? '_${_sanitizeIdentifier(pkgName)}';
 
   void writeIfNotNull(String name, Object? obj) {
     if (obj == null) return;
@@ -64,9 +110,9 @@ String renderDartLicensesFile(ProjectStructure deps) {
     sb.writeln('    $name: ${toQuotedString(obj)},');
   }
 
-  for (final l in <Package>[...deps.allDependencies, deps.package]) {
+  for (final l in allRenderedPackages) {
     sb.writeln('/// ${l.name} ${l.version}');
-    sb.writeln('const _${_sanitizeIdentifier(l.name)} = Package(');
+    sb.writeln('const ${identOf(l.name)} = Package(');
     writeIfNotNull('name', l.name);
     writeIfNotNull('description', l.description);
     writeIfNotNull('homepage', l.homepage);
@@ -77,10 +123,10 @@ String renderDartLicensesFile(ProjectStructure deps) {
     writeIfNotNull('isMarkdown', l.isMarkdown);
     writeIfNotNull('isSdk', l.isSdk);
     sb.writeln(
-      "    dependencies: [${l.dependencies.map((d) => "PackageRef('${d.name}')").join(', ')}],",
+      '    dependencies: [${l.dependencies.map((d) => 'PackageRef(${toQuotedString(d.name)})').join(', ')}],',
     );
     sb.writeln(
-      "    devDependencies: [${l.devDependencies.map((d) => "PackageRef('${d.name}')").join(', ')}],",
+      '    devDependencies: [${l.devDependencies.map((d) => 'PackageRef(${toQuotedString(d.name)})').join(', ')}],',
     );
     writeIfNotNull('license', l.license);
     sb.writeln('  );');
@@ -98,21 +144,21 @@ String renderDartLicensesFile(ProjectStructure deps) {
 // https://pub.dev/packages/pubspec_licenses
 
 /// This package.
-const thisPackage = _${_sanitizeIdentifier(deps.package.name)};
+const thisPackage = ${identOf(effectiveRootPackage.name)};
 
 /// All dependencies including transitive dependencies.
 const allDependencies = <Package>[
-${deps.allDependencies.map((d) => '  _${_sanitizeIdentifier(d.name)}').join(',\n')}
+${deps.allDependencies.map((d) => '  ${identOf(d.name)}').join(',\n')}
 ];
 
 /// Direct `dependencies`.
 const dependencies = <Package>[
-${deps.package.dependencies.map((d) => '  _${_sanitizeIdentifier(d.name)}').join(',\n')}
+${effectiveRootPackage.dependencies.map((d) => '  ${identOf(d.name)}').join(',\n')}
 ];
 
 /// Direct `dev_dependencies`.
 const devDependencies = <Package>[
-${deps.package.devDependencies.map((d) => '  _${_sanitizeIdentifier(d.name)}').join(',\n')}
+${effectiveRootPackage.devDependencies.map((d) => '  ${identOf(d.name)}').join(',\n')}
 ];
 
 /// Package license definition.
@@ -261,15 +307,27 @@ Future<int> generate(List<String> args) async {
   try {
     String effectiveProjectRoot;
     String effectiveLockPath;
+    String? effectiveYamlPath;
     if (pubspecLockPath != null && pubspecLockPath.isNotEmpty) {
       effectiveLockPath = pubspecLockPath;
       effectiveProjectRoot = projectRoot ?? path.dirname(pubspecLockPath);
+      final candidateYaml = path.join(effectiveProjectRoot, 'pubspec.yaml');
+      if (File(candidateYaml).existsSync()) {
+        effectiveYamlPath = candidateYaml;
+      }
     } else if (projectRoot != null && projectRoot.isNotEmpty) {
       effectiveProjectRoot = projectRoot;
-      effectiveLockPath = path.join(projectRoot, 'pubspec.lock');
+      effectiveLockPath = findPubspecLockFromDirectory(Directory(projectRoot));
+      final candidateYaml = path.join(projectRoot, 'pubspec.yaml');
+      if (File(candidateYaml).existsSync()) {
+        effectiveYamlPath = candidateYaml;
+      }
     } else {
       effectiveProjectRoot = await findProjectRoot();
-      effectiveLockPath = path.join(effectiveProjectRoot, 'pubspec.lock');
+      effectiveLockPath = findPubspecLockFromDirectory(
+        Directory(effectiveProjectRoot),
+      );
+      effectiveYamlPath = path.join(effectiveProjectRoot, 'pubspec.yaml');
     }
 
     // When neither -o/--output, -j/--json, nor -s/--summary is provided,
@@ -285,6 +343,7 @@ Future<int> generate(List<String> args) async {
 
     final structure = await listDependencies(
       pubspecLockPath: effectiveLockPath,
+      pubspecYamlPath: effectiveYamlPath,
       flutterDirPath: flutterDirPath,
       pubCacheDirPath: pubCacheDirPath,
       ignore: ignore,
@@ -333,7 +392,7 @@ Future<int> generate(List<String> args) async {
       }
       rendered = buffer.toString().trimRight();
     } else {
-      rendered = renderDartLicensesFile(structure);
+      rendered = renderDartLicensesFile(structure, ignore: ignore);
     }
 
     if (outputPath == null || outputPath == '-') {

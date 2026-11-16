@@ -277,6 +277,7 @@ Future<ProjectStructure> listDependencies({
   final packagesMap = rawPackages is Map ? rawPackages : <dynamic, dynamic>{};
 
   final limitConcurrency = LimitConcurrency(maxConcurrency);
+  final lockBasePubspecPath = path.join(lockDir, 'pubspec.yaml');
   final loadedPackages = await Future.wait(
     packagesMap.keys
         .map((k) => k.toString())
@@ -298,7 +299,7 @@ Future<ProjectStructure> listDependencies({
           package: entry,
           pubCacheDirPath: pubCacheDir,
           flutterDir: effectiveFlutterDir,
-          basePubspecYamlPath: resolvedYamlPath,
+          basePubspecYamlPath: lockBasePubspecPath,
           packageConfigPaths: packageConfigPaths,
         );
       }),
@@ -328,6 +329,79 @@ Future<ProjectStructure> listDependencies({
           packagesByName[pkg.name] = pkg;
         }
       }
+    }
+  }
+
+  for (final pkg in packagesByName.values) {
+    pkg.updateDependencies(packagesByName);
+  }
+  myPackage.updateDependencies(packagesByName);
+
+  // When excluding dev_dependencies, prune transitive packages that are only
+  // reachable from dev_dependencies and not from runtime dependencies.
+  if (!generateDevDependencies) {
+    final rawRootDeps = myPackage.pubspec?['dependencies'];
+    final rawRootDevDeps = myPackage.pubspec?['dev_dependencies'];
+    final rootDevDepNames = rawRootDevDeps is Map
+        ? rawRootDevDeps.keys.map((k) => k.toString()).toSet()
+        : const <String>{};
+
+    final runtimeSeeds = <String>{
+      ...myPackage.dependencies.map((d) => d.name),
+      if (rawRootDeps is Map) ...rawRootDeps.keys.map((k) => k.toString()),
+    };
+
+    var lockHasDirectClassification = false;
+    final isSubWorkspaceMember =
+        path.normalize(yamlDir) != path.normalize(lockDir);
+    for (final entry in packagesMap.entries) {
+      final pkgName = entry.key.toString();
+      final pkgData = entry.value;
+      if (pkgData is Map) {
+        final depKind = pkgData['dependency']?.toString() ?? '';
+        if (depKind.startsWith('direct ')) {
+          lockHasDirectClassification = true;
+        }
+        if (!isSubWorkspaceMember) {
+          if (depKind == 'direct main' ||
+              (depKind == 'direct overridden' &&
+                  !rootDevDepNames.contains(pkgName))) {
+            runtimeSeeds.add(pkgName);
+          }
+        }
+      }
+    }
+    runtimeSeeds.removeAll(ignore);
+
+    final shouldPruneGraph = runtimeSeeds.isNotEmpty ||
+        rootDevDepNames.isNotEmpty ||
+        lockHasDirectClassification;
+
+    if (shouldPruneGraph) {
+      final reachable = <String>{};
+      final queue = <String>[
+        for (final seed in runtimeSeeds)
+          if (packagesByName.containsKey(seed)) seed,
+      ];
+      while (queue.isNotEmpty) {
+        final current = queue.removeLast();
+        if (!reachable.add(current)) continue;
+        final pkg = packagesByName[current];
+        if (pkg == null) continue;
+        for (final child in pkg.dependencies) {
+          if (!reachable.contains(child.name) &&
+              packagesByName.containsKey(child.name)) {
+            queue.add(child.name);
+          }
+        }
+        // Flutter SDK implicitly bundles sky_engine alongside flutter runtime.
+        if (current == 'flutter' &&
+            packagesByName.containsKey('sky_engine') &&
+            !reachable.contains('sky_engine')) {
+          queue.add('sky_engine');
+        }
+      }
+      packagesByName.removeWhere((name, _) => !reachable.contains(name));
     }
   }
 

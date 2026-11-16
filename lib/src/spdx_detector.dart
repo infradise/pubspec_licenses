@@ -86,13 +86,29 @@ List<String> _extractIdsFromSpdxExpression(String expression) {
     cleaned = cleaned.substring(0, hashIdx).trim();
   }
 
-  final tokens = cleaned.split(RegExp(r'\s+'));
-  final result = <String>[];
-  for (var token in tokens) {
+  final rawTokens = cleaned.split(RegExp(r'\s+'));
+  final cleanedTokens = <String>[];
+  for (var token in rawTokens) {
     token = token.replaceAll(RegExp(r'^[,;]+|[,;.]+$'), '');
-    if (token.isEmpty) continue;
+    if (token.isNotEmpty) {
+      cleanedTokens.add(token);
+    }
+  }
+
+  final result = <String>[];
+  for (var i = 0; i < cleanedTokens.length; i++) {
+    final token = cleanedTokens[i];
     final upper = token.toUpperCase();
     if (upper == 'AND' || upper == 'OR' || upper == 'WITH') continue;
+    if (i + 2 < cleanedTokens.length &&
+        cleanedTokens[i + 1].toUpperCase() == 'WITH') {
+      final exceptionId = cleanedTokens[i + 2];
+      if (exceptionId.isNotEmpty) {
+        result.add('$token WITH $exceptionId');
+        i += 2;
+        continue;
+      }
+    }
     result.add(token);
   }
   return result;

@@ -1625,4 +1625,226 @@ Future<void> _runRealPubCacheCorpusTests() async {
     _expectTrue(scannedCount > 0,
         'Expected to scan at least 1 package in ~/.pub-cache');
   });
+
+  await _test(
+      '6.2 v1.1.0 hardening: backslash/interpolation/trailing-quote codegen compiles cleanly, prunes transitive dev deps, honors root --ignore, and supports Pub Workspace sub-packages',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('pubspec_licenses_v110_');
+    try {
+      // 1. MiniYamlParser multiline quote with trailing # comment & plain scalar with ': '
+      const trickyYaml = '''
+description: "First line with # literal hash
+  second line closing quote" # trailing comment after close
+notes: Plain headline: fast
+  Note: indented continuation with colon
+spdx_check: Apache-2.0 WITH LLVM-exception
+''';
+      final parsedYaml = MiniYamlParser.parseMap(trickyYaml);
+      _expectEqual(
+        parsedYaml['description'],
+        'First line with # literal hash second line closing quote',
+      );
+      _expectEqual(
+        parsedYaml['notes'],
+        'Plain headline: fast Note: indented continuation with colon',
+      );
+      _expectListEqual(
+        detectSpdxIdentifiers(
+          'SPDX-License-Identifier: (MIT OR Apache-2.0 WITH LLVM-exception)',
+        ),
+        <String>['MIT', 'Apache-2.0 WITH LLVM-exception'],
+      );
+
+      // 2. Pub Workspace root + sub-package + runtime vs transitive dev graph + tricky license strings
+      final wsRoot = Directory(join(tempRoot.path, 'ws'))
+        ..createSync(recursive: true);
+      final memberDir = Directory(join(wsRoot.path, 'apps', 'client_app'))
+        ..createSync(recursive: true);
+      final sharedLocalDir = Directory(join(tempRoot.path, 'shared_local'))
+        ..createSync(recursive: true);
+      final pubCacheDir = Directory(join(tempRoot.path, 'pub-cache'))
+        ..createSync(recursive: true);
+
+      // British LICENCE + tricky backslashes, \$env, Windows path C:\users\u123, trailing single quote
+      const trickyLicenseText =
+          r"Copyright (c) C:\users\u0041\x86 \$secret_var 'quoted'"
+          "\nSecond line ending with single quote'";
+      await File(join(sharedLocalDir.path, 'pubspec.yaml')).writeAsString('''
+name: shared_local
+description: Path dep with tricky \\\$interpolation and C:\\users\\path
+version: 1.0.0
+dependencies:
+  runtime_leaf: ^1.0.0
+''');
+      await File(join(sharedLocalDir.path, 'LICENCE'))
+          .writeAsString(trickyLicenseText);
+
+      final runtimeLeafDir = Directory(
+        join(pubCacheDir.path, 'hosted', 'pub.dev', 'runtime_leaf-1.0.0'),
+      )..createSync(recursive: true);
+      await File(join(runtimeLeafDir.path, 'pubspec.yaml')).writeAsString('''
+name: runtime_leaf
+description: Reachable runtime transitive package
+version: 1.0.0
+''');
+      await File(join(runtimeLeafDir.path, 'UNLICENSE')).writeAsString('''
+This is free and unencumbered software released into the public domain.
+''');
+
+      final devDirectDir = Directory(
+        join(pubCacheDir.path, 'hosted', 'pub.dev', 'dev_runner-1.0.0'),
+      )..createSync(recursive: true);
+      await File(join(devDirectDir.path, 'pubspec.yaml')).writeAsString('''
+name: dev_runner
+description: Direct dev dependency
+version: 1.0.0
+dependencies:
+  dev_only_transitive: ^1.0.0
+''');
+      await File(join(devDirectDir.path, 'LICENSE'))
+          .writeAsString('SPDX-License-Identifier: MIT\n');
+
+      final devTransitiveDir = Directory(
+        join(
+            pubCacheDir.path, 'hosted', 'pub.dev', 'dev_only_transitive-1.0.0'),
+      )..createSync(recursive: true);
+      await File(join(devTransitiveDir.path, 'pubspec.yaml')).writeAsString('''
+name: dev_only_transitive
+description: Transitive package ONLY used by dev_runner
+version: 1.0.0
+''');
+      await File(join(devTransitiveDir.path, 'LICENSE'))
+          .writeAsString('SPDX-License-Identifier: BSD-3-Clause\n');
+
+      // Workspace root pubspec.yaml + pubspec.lock (relative path '../shared_local' is relative to wsRoot!)
+      await File(join(wsRoot.path, 'pubspec.yaml')).writeAsString('''
+name: monorepo_workspace
+description: Workspace root
+publish_to: none
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+workspace:
+  - apps/client_app
+''');
+      await File(join(wsRoot.path, 'pubspec.lock')).writeAsString('''
+packages:
+  shared_local:
+    dependency: "direct main"
+    description:
+      path: "../shared_local"
+      relative: true
+    source: path
+    version: "1.0.0"
+  runtime_leaf:
+    dependency: transitive
+    description:
+      name: runtime_leaf
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  dev_runner:
+    dependency: "direct dev"
+    description:
+      name: dev_runner
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  dev_only_transitive:
+    dependency: transitive
+    description:
+      name: dev_only_transitive
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+''');
+
+      // Sub-package apps/client_app with proprietary LICENSE that must be scrubbed when ignored!
+      final memberLibDir = Directory(join(memberDir.path, 'lib'))
+        ..createSync(recursive: true);
+      await File(join(memberDir.path, 'pubspec.yaml')).writeAsString('''
+name: client_app
+description: Commercial client app
+version: 2.0.0
+resolution: workspace
+dependencies:
+  shared_local: ^1.0.0
+dev_dependencies:
+  dev_runner: ^1.0.0
+''');
+      await File(join(memberDir.path, 'LICENSE')).writeAsString(
+        'PROPRIETARY_SECRET_TERMS_DO_NOT_EMIT',
+      );
+
+      final outDartPath = join(memberLibDir.path, 'oss_licenses.dart');
+      final exitStatus = await generate(<String>[
+        '-p',
+        memberDir.path,
+        '--pub-cache-dir',
+        pubCacheDir.path,
+        '--no-dev-dependencies',
+        '--ignore',
+        'client_app',
+        '-o',
+        outDartPath,
+      ]);
+      _expectEqual(exitStatus, 0);
+
+      final generatedDart = await File(outDartPath).readAsString();
+      _expectTrue(
+        !generatedDart.contains('PROPRIETARY_SECRET_TERMS_DO_NOT_EMIT'),
+        'Ignored root package proprietary license must never be emitted',
+      );
+      _expectTrue(
+        !generatedDart.contains('dev_runner') &&
+            !generatedDart.contains('dev_only_transitive'),
+        'Both direct and transitive dev dependencies must be pruned',
+      );
+      _expectTrue(
+        generatedDart.contains('const _shared_local = Package(') &&
+            generatedDart.contains('const _runtime_leaf = Package('),
+        'Runtime direct and transitive dependencies must be retained',
+      );
+      _expectTrue(
+        generatedDart.contains("spdxIdentifiers: ['Unlicense']"),
+        'UNLICENSE file should be detected as Unlicense',
+      );
+
+      // Compile and execute the generated oss_licenses.dart via Dart VM to prove zero syntax/escape bugs!
+      final verifyScript = File(join(memberDir.path, 'verify_gen.dart'));
+      await verifyScript.writeAsString('''
+import 'lib/oss_licenses.dart';
+
+void main() {
+  if (thisPackage.name != 'client_app') {
+    throw StateError('Unexpected thisPackage.name: \${thisPackage.name}');
+  }
+  if (thisPackage.license != null) {
+    throw StateError('Expected ignored thisPackage.license to be null');
+  }
+  if (allDependencies.length != 2) {
+    throw StateError('Expected 2 runtime deps, got \${allDependencies.length}');
+  }
+  final shared = allDependencies.firstWhere((p) => p.name == 'shared_local');
+  if (!shared.license!.contains(r'C:\\users\\u0041\\x86 \\\$secret_var')) {
+    throw StateError('Backslash or \\\$ escaping corrupted: \${shared.license}');
+  }
+  if (!shared.license!.endsWith("single quote'")) {
+    throw StateError('Trailing quote corrupted: \${shared.license}');
+  }
+}
+''');
+      final vmRes = await Process.run(
+        Platform.resolvedExecutable,
+        <String>['run', verifyScript.path],
+      );
+      _expectEqual(
+        vmRes.exitCode,
+        0,
+        'Generated oss_licenses.dart failed Dart VM execution: ${vmRes.stderr}',
+      );
+    } finally {
+      await tempRoot.delete(recursive: true);
+    }
+  });
 }
